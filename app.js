@@ -588,11 +588,28 @@ function initSettings() {
   }
 }
 
+function unsupportedReason() {
+  const ua = navigator.userAgent;
+  const fix = 'Abre la app Chrome y escribe la dirección en su barra.';
+  if (!isSecureContext) return `La página no está en HTTPS. Abre https://${location.host}${location.pathname}`;
+  if (/SamsungBrowser/.test(ua)) return `Samsung Internet no soporta Bluetooth web. ${fix}`;
+  if (/Firefox|FxiOS/.test(ua)) return `Firefox no soporta Bluetooth web. ${fix}`;
+  if (navigator.brave) return 'Brave trae Bluetooth web desactivado. Usa Chrome o actívalo en brave://flags/#brave-web-bluetooth-api';
+  if (/iPhone|iPad/.test(ua)) return 'En iPhone ningún navegador soporta Bluetooth web.';
+  if (/; wv\)|FBAN|FBAV|Instagram|WhatsApp|Line\//.test(ua)) return `Estás en el navegador interno de otra app (WhatsApp, Gmail…). Menú ⋮ → "Abrir en Chrome".`;
+  return `Este navegador no soporta Bluetooth web. ${fix} Si ya es Chrome, actualízalo.`;
+}
+
 function init() {
   initSettings();
   renderHistory();
   renderReadings();
-  if (!navigator.bluetooth) { $('unsupported').hidden = false; $('connect').disabled = true; $('restStart').disabled = true; }
+  if (!navigator.bluetooth) {
+    $('unsupported').hidden = false;
+    $('unsupported').textContent = unsupportedReason();
+    $('connect').disabled = true;
+    $('restStart').disabled = true;
+  }
   $('connect').onclick = connect;
   $('disconnect').onclick = stop;
   $('restStart').onclick = restStart;

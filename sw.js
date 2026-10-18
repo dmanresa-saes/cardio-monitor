@@ -1,4 +1,4 @@
-const CACHE = 'cardio-v2';
+const CACHE = 'cardio-v3';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', e => {
