@@ -171,8 +171,9 @@ async function startStream() {
     const ch = await svc.getCharacteristic(HR_MEASUREMENT);
     ch.addEventListener('characteristicvaluechanged', e => onMeasurement(parseHeartRate(e.target.value)));
     await ch.startNotifications();
+    return server;
   };
-  await withTimeout(connectAll(), 20000);
+  const server = await withTimeout(connectAll(), 20000);
   setStatus(device.name || 'Conectado', true);
   $('alert').hidden = true;
   readBattery(server);
