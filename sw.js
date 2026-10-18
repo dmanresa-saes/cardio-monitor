@@ -1,8 +1,9 @@
-const CACHE = 'cardio-v6';
+const CACHE = 'cardio-v7';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
+  // 'reload' skips the HTTP cache so a new version never caches stale files
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -15,7 +16,7 @@ self.addEventListener('activate', e => {
 // Network first, cache fallback: updates arrive when online, app still works offline.
 self.addEventListener('fetch', e => {
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));

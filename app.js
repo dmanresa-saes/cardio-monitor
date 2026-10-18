@@ -20,6 +20,7 @@ let stopping = false;
 let wakeLock = null;
 let alertState = { since: null, last: 0 };
 let timer = null;
+let pendingReload = false;  // new app version waiting for the session to end
 
 // ---------- storage ----------
 
@@ -112,12 +113,12 @@ function hrMax() {
 }
 
 const ZONES = [
-  { name: 'Reposo', pct: 0, color: 'var(--z1)' },
-  { name: 'Z1 Muy suave', pct: 0.5, color: 'var(--z1)' },
-  { name: 'Z2 Suave', pct: 0.6, color: 'var(--z2)' },
-  { name: 'Z3 Moderada', pct: 0.7, color: 'var(--z3)' },
-  { name: 'Z4 Intensa', pct: 0.8, color: 'var(--z4)' },
-  { name: 'Z5 Máxima', pct: 0.9, color: 'var(--z5)' },
+  { name: 'Reposo', pct: 0, color: '--z0' },
+  { name: 'Z1 Muy suave', pct: 0.5, color: '--z1' },
+  { name: 'Z2 Suave', pct: 0.6, color: '--z2' },
+  { name: 'Z3 Moderada', pct: 0.7, color: '--z3' },
+  { name: 'Z4 Intensa', pct: 0.8, color: '--z4' },
+  { name: 'Z5 Máxima', pct: 0.9, color: '--z5' },
 ];
 
 function zoneFor(bpm) {
@@ -216,6 +217,7 @@ function stop() {
   $('connect').hidden = false;
   $('disconnect').hidden = true;
   renderHistory();
+  if (pendingReload) location.reload();
 }
 
 // ---------- live data ----------
@@ -252,7 +254,7 @@ function onMeasurement({ bpm, contact, rr }) {
   $('contact').textContent = contact === null ? 'n/d' : contact ? 'Sí' : 'No';
   const z = zoneFor(bpm);
   $('zone').textContent = `${z.name} · ${Math.round(bpm / hrMax() * 100)}%`;
-  $('zone').style.background = z.color;
+  $('zone').style.background = `var(${z.color})`;
   checkAlert(bpm);
 }
 
@@ -461,7 +463,7 @@ function drawTrend(rs) {
   const x = i => pad + i / (rs.length - 1) * (w - pad - 8);
   const y = v => h - 16 - (v - lo) / (hi - lo) * (h - 24);
 
-  ctx.fillStyle = css.getPropertyValue('--z3');
+  ctx.fillStyle = css.getPropertyValue('--z2');
   ctx.globalAlpha = 0.15;
   rs.forEach((r, i) => {
     if (!r.baseline || i === rs.length - 1) return;
@@ -553,12 +555,26 @@ function drawChart() {
     ctx.fillText(b, 2, y(b) + 4);
   }
 
-  ctx.strokeStyle = css.getPropertyValue('--accent');
-  ctx.lineWidth = 2;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  pts.forEach((p, i) => i ? ctx.lineTo(x(p.t), y(p.bpm)) : ctx.moveTo(x(p.t), y(p.bpm)));
-  ctx.stroke();
+  // each segment takes the colour of the zone it ends in
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  for (let i = 1; i < pts.length; i++) {
+    ctx.strokeStyle = css.getPropertyValue(zoneFor(pts[i].bpm).color);
+    ctx.beginPath();
+    ctx.moveTo(x(pts[i - 1].t), y(pts[i - 1].bpm));
+    ctx.lineTo(x(pts[i].t), y(pts[i].bpm));
+    ctx.stroke();
+  }
+}
+
+function renderLegend() {
+  const max = hrMax();
+  $('legend').innerHTML = ZONES.map((z, i) => {
+    const from = Math.round(z.pct * max);
+    const to = i < ZONES.length - 1 ? Math.round(ZONES[i + 1].pct * max) - 1 : null;
+    const range = i === 0 ? `<${Math.round(ZONES[1].pct * max)}` : to ? `${from}–${to}` : `${from}+`;
+    return `<span><i style="background:var(${z.color})"></i>${z.name.replace(/^Z\d /, '')} ${range}</span>`;
+  }).join('');
 }
 
 // ---------- history ----------
@@ -628,8 +644,9 @@ function initSettings() {
   for (const key of ['age', 'hrmax', 'alertHigh', 'alertLow']) {
     const input = $(key);
     input.value = settings[key];
-    input.addEventListener('change', () => { settings[key] = input.value; save(SETTINGS_KEY, settings); });
+    input.addEventListener('change', () => { settings[key] = input.value; save(SETTINGS_KEY, settings); renderLegend(); });
   }
+  renderLegend();
 }
 
 function unsupportedReason() {
@@ -659,7 +676,15 @@ function init() {
   $('restStart').onclick = restStart;
   $('restCancel').onclick = restCancel;
   window.addEventListener('resize', () => session && drawChart());
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    // Reload into a new version as soon as it's installed, but never mid-session.
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return;
+      if (session) pendingReload = true; else location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(() => {});
+  }
 }
 
 init();
