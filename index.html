@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <title>Cardio Monitor</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Cardio Monitor</h1>
+    <span id="status" class="status off">Desconectado</span>
+  </header>
+
+  <main>
+    <section id="unsupported" class="card warn" hidden>
+      Este navegador no soporta Web Bluetooth. Usa Chrome o Edge (PC o Android) y abre la app por HTTPS o localhost.
+    </section>
+
+    <section id="alert" class="card alert" hidden></section>
+
+    <section class="card live">
+      <div class="bpm"><span id="bpm">--</span><small>BPM</small></div>
+      <div id="zone" class="zone">—</div>
+      <div class="stats">
+        <div><label>RMSSD</label><span id="rmssd">--</span><small>ms</small></div>
+        <div><label>SDNN</label><span id="sdnn">--</span><small>ms</small></div>
+        <div><label>Media</label><span id="avg">--</span><small>BPM</small></div>
+        <div><label>Máx</label><span id="max">--</span><small>BPM</small></div>
+        <div><label>Mín</label><span id="min">--</span><small>BPM</small></div>
+        <div><label>Tiempo</label><span id="elapsed">0:00</span></div>
+        <div><label>Batería</label><span id="battery">--</span><small>%</small></div>
+        <div><label>Contacto</label><span id="contact">--</span></div>
+      </div>
+      <canvas id="chart" height="180"></canvas>
+      <div class="buttons">
+        <button id="connect" class="primary">Conectar H6</button>
+        <button id="disconnect" hidden>Detener y guardar</button>
+      </div>
+    </section>
+
+    <section class="card" id="restCard">
+      <h2>Medición en reposo (HRV)</h2>
+      <p class="hint">Mejor cada mañana, en la misma postura (sentado o tumbado), antes del café.
+        1 min de relajación guiada y 3 min de medición sin moverte.</p>
+      <div id="restIdle" class="buttons">
+        <button id="restStart" class="primary">Iniciar medición (4 min)</button>
+      </div>
+      <div id="restRun" hidden>
+        <div id="breath" class="breath"><div class="circle"></div><span id="breathText">Inspira</span></div>
+        <p id="restPhase" class="phase"></p>
+        <progress id="restProgress" max="1" value="0"></progress>
+        <div class="buttons"><button id="restCancel">Cancelar</button></div>
+      </div>
+      <div id="restResult" hidden>
+        <div id="restStats" class="stats"></div>
+        <div id="restMsgs"></div>
+        <h3>Diagrama de Poincaré</h3>
+        <p class="hint">Cada punto es un latido frente al siguiente. Nube ancha y alargada = buena variabilidad;
+          nube pequeña y apretada = poca variabilidad (estrés, cansancio). Puntos sueltos lejos = latidos irregulares o artefactos.</p>
+        <canvas id="poincare" class="square"></canvas>
+      </div>
+      <div id="trendWrap" hidden>
+        <h3>Tendencia</h3>
+        <canvas id="trend" height="160"></canvas>
+      </div>
+      <div id="readings"></div>
+
+      <details class="glossary">
+        <summary>¿Qué significa cada cosa?</summary>
+        <p><b>Pulso (BPM)</b>: latidos por minuto. En reposo, lo normal en adultos es 50–90; cuanto más en forma, más bajo.</p>
+        <p><b>Intervalo RR</b>: el tiempo exacto entre un latido y el siguiente, en milisegundos. A 60 BPM serían unos 1000 ms, pero nunca son todos iguales.</p>
+        <p><b>HRV (variabilidad de la frecuencia cardíaca)</b>: cuánto varía ese tiempo entre latidos. Un corazón sano y descansado <i>no</i> late como un metrónomo: se adapta todo el rato (al respirar se acelera un poco, al soltar el aire se frena). Más variabilidad suele indicar que el cuerpo está relajado y recuperado; menos, que está bajo estrés, cansado, con poco sueño, tras alcohol o incubando algo.</p>
+        <p><b>RMSSD</b>: la medida principal de HRV. Cuánto cambia, de media, un latido respecto al siguiente. Más alto = más relajado. Varía mucho entre personas (a los 50 años es típico 15–40 ms), así que lo útil es compararte <i>contigo mismo</i>, no con otros.</p>
+        <p><b>ln RMSSD</b>: el mismo RMSSD en escala logarítmica. Lo usan las apps para comparar días de forma más estable.</p>
+        <p><b>SDNN</b>: variabilidad total durante la medición, incluidos cambios lentos. Similar idea que RMSSD.</p>
+        <p><b>pNN50</b>: % de latidos que difieren del anterior en más de 50 ms.</p>
+        <p><b>SD1 / SD2</b>: anchura y longitud de la nube del diagrama de Poincaré. SD1 ≈ variabilidad latido a latido (relajación); SD2 ≈ variabilidad a largo plazo.</p>
+        <p><b>Tu rango habitual</b>: la app calcula tu media de las últimas mediciones (hasta 7). Un día concreto por debajo de ese rango es una señal para tomártelo con calma; uno solo no significa nada grave.</p>
+        <p><b>Zonas</b>: % de tu pulso máximo (por defecto 220 − edad). Z2 = suave, Z5 = máximo esfuerzo.</p>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Ajustes</h2>
+      <div class="form">
+        <label>Edad <input id="age" type="number" min="10" max="100" inputmode="numeric"></label>
+        <label>FC máx (vacío = 220 − edad) <input id="hrmax" type="number" min="100" max="230" inputmode="numeric"></label>
+        <label>Alerta si supera <input id="alertHigh" type="number" min="60" max="230" inputmode="numeric"></label>
+        <label>Alerta si baja de <input id="alertLow" type="number" min="25" max="100" inputmode="numeric"></label>
+      </div>
+      <p class="hint">La alerta salta si el pulso se mantiene fuera del rango 10 s seguidos (vibración + sonido).</p>
+    </section>
+
+    <section class="card">
+      <h2>Historial</h2>
+      <div id="history"></div>
+    </section>
+
+    <p class="disclaimer">
+      Sensor deportivo, no dispositivo médico. No sustituye un ECG ni diagnostica arritmias.
+      Ante dolor en el pecho, mareos o palpitaciones, consulta a un médico.
+    </p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
