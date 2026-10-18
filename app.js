@@ -200,6 +200,7 @@ async function onDisconnected() {
 function stop() {
   stopping = true;
   clearInterval(timer);
+  stopBeat();
   if (device?.gatt.connected) device.gatt.disconnect();
   releaseWakeLock();
   if (session && session.samples.length > 5) {
@@ -219,9 +220,34 @@ function stop() {
 
 // ---------- live data ----------
 
+// ---------- beating heart ----------
+
+let beatInterval = 0;  // ms between beats, from the latest RR (or BPM if no RR)
+let beatTimer = null;
+
+function beatLoop() {
+  if (!session || !beatInterval) { beatTimer = null; return; }
+  const heart = $('heart');
+  heart.classList.remove('beat');
+  void heart.offsetWidth;  // restart the CSS animation
+  heart.classList.add('beat');
+  beatTimer = setTimeout(beatLoop, beatInterval);
+}
+
+function stopBeat() {
+  clearTimeout(beatTimer);
+  beatTimer = null;
+  beatInterval = 0;
+  $('heart').classList.remove('on', 'beat');
+}
+
 function onMeasurement({ bpm, contact, rr }) {
   if (!session) return;
   session.samples.push({ t: Date.now(), bpm, rr });
+  const validRR = rr.filter(v => v >= 300 && v <= 2000);
+  beatInterval = validRR.length ? validRR[validRR.length - 1] : bpm ? 60000 / bpm : 0;
+  $('heart').classList.add('on');
+  if (!beatTimer) beatLoop();
   $('bpm').textContent = bpm || '--';
   $('contact').textContent = contact === null ? 'n/d' : contact ? 'Sí' : 'No';
   const z = zoneFor(bpm);
