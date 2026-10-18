@@ -129,14 +129,32 @@ function zoneFor(bpm) {
 
 // ---------- bluetooth ----------
 
+// Android's GATT stack sometimes never resolves a connect; fail fast instead of hanging.
+function withTimeout(promise, ms, step) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`sin respuesta en "${step}"`)), ms)),
+  ]);
+}
+
 async function connect() {
   try {
+    setStatus('Elige el H6 en la lista…', false);
     device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [HR_SERVICE] }],
       optionalServices: [BATTERY_SERVICE],
     });
     device.addEventListener('gattserverdisconnected', onDisconnected);
-    await startStream();
+    stopping = true;  // suppress auto-reconnect while the initial attempts run
+    let lastErr;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try { await startStream(attempt); lastErr = null; break; } catch (err) {
+        lastErr = err;
+        if (device.gatt.connected) device.gatt.disconnect();
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    if (lastErr) throw lastErr;
     session = { start: Date.now(), samples: [] };
     stopping = false;
     timer = setInterval(tick, 1000);
@@ -144,18 +162,33 @@ async function connect() {
     $('connect').hidden = true;
     $('disconnect').hidden = false;
   } catch (err) {
-    if (err.name !== 'NotFoundError') setStatus(`Error: ${err.message}`, false);
+    stopping = false;
+    if (err.name === 'NotFoundError') { setStatus('Desconectado', false); return; }
+    setStatus('No conecta', false);
+    showConnectHelp(err);
   }
 }
 
-async function startStream() {
-  setStatus('Conectando…', false);
-  const server = await device.gatt.connect();
-  const svc = await server.getPrimaryService(HR_SERVICE);
-  const ch = await svc.getCharacteristic(HR_MEASUREMENT);
+function showConnectHelp(err) {
+  $('alert').hidden = false;
+  $('alert').textContent =
+    `No se pudo conectar (${err.message}). Revisa: 1) el H6 no está conectado a otra app o reloj (Coospo, Strava, Garmin…); ` +
+    '2) el H6 NO está emparejado en Ajustes de Bluetooth de Android (si lo está, "Olvidar"); ' +
+    '3) Bluetooth y Ubicación activados; 4) electrodos húmedos. Luego vuelve a pulsar Conectar.';
+}
+
+async function startStream(attempt = 1) {
+  const tag = attempt > 1 ? ` (intento ${attempt}/3)` : '';
+  setStatus(`Conectando${tag}…`, false);
+  const server = await withTimeout(device.gatt.connect(), 15000, 'conectar');
+  setStatus(`Buscando servicio de pulso${tag}…`, false);
+  const svc = await withTimeout(server.getPrimaryService(HR_SERVICE), 15000, 'servicio');
+  const ch = await withTimeout(svc.getCharacteristic(HR_MEASUREMENT), 15000, 'característica');
   ch.addEventListener('characteristicvaluechanged', e => onMeasurement(parseHeartRate(e.target.value)));
-  await ch.startNotifications();
+  setStatus(`Activando datos${tag}…`, false);
+  await withTimeout(ch.startNotifications(), 15000, 'activar datos');
   setStatus(device.name || 'Conectado', true);
+  $('alert').hidden = true;
   readBattery(server);
 }
 
